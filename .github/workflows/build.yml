@@ -1,0 +1,49 @@
+name: Build APK
+
+# Manual only: nothing runs until you press "Run workflow" in the Actions tab.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle 8.10.2
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+          cache-disabled: true
+
+      - name: Make sure the Android SDK pieces exist
+        run: |
+          SDKM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKM" --licenses > /dev/null 2>&1 || true
+          "$SDKM" "platforms;android-34" "build-tools;34.0.0" > /dev/null 2>&1 \
+            || sudo "$SDKM" "platforms;android-34" "build-tools;34.0.0" > /dev/null 2>&1 \
+            || true
+
+      - name: Build debug APK
+        run: gradle assembleDebug --no-daemon --stacktrace
+
+      - name: Publish APK as a release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp app/build/outputs/apk/debug/app-debug.apk FlowDictation.apk
+          gh release create "build-${{ github.run_number }}" FlowDictation.apk \
+            --title "Build ${{ github.run_number }}" \
+            --notes "Debug APK built from commit ${{ github.sha }}. Download FlowDictation.apk below." \
+            --target "${{ github.sha }}"
